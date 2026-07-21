@@ -1,0 +1,98 @@
+# This script is designed to run in a Python environment.
+# The authors executed this script using JupyterLab.
+# Modify the input and output paths below to match the directory structure
+# on your computer.
+
+import os
+from PIL import Image
+import numpy as np
+import pandas as pd
+
+# Set the range of X folders to be processed.
+# The endpoint of range() is excluded.
+# For example, range(9, 22) processes folders 9 through 21.
+for X in range(0, 32):
+
+    # 1. Define the input directory and output file path.
+    image_folder = (
+        fr"D:/BM study/Image quantification pipeline/"
+        fr"RAW File/Fmi/Divide/Laminin/{X}"
+    )
+
+    output_excel = (
+        fr"D:/BM study/Image quantification pipeline/"
+        fr"RAW File/Fmi/Divide/#csv RAW File/"
+        fr"1.ch2_laminin_{X},y.xlsx"
+    )
+
+    grid_size = 4  # Subdivide each image into 4 × 4 subtiles.
+
+    # Skip the current X folder if it does not exist.
+    if not os.path.exists(image_folder):
+        print(f"Folder not found: {image_folder}. Skipping.")
+        continue
+
+    # 2. Create an Excel writer for the current X folder.
+    writer = pd.ExcelWriter(output_excel, engine="openpyxl")
+
+    # 3. Process each TIFF image in the folder.
+    for filename in os.listdir(image_folder):
+        if filename.endswith(".tif"):
+            img_path = os.path.join(image_folder, filename)
+
+            # Open the image and convert it to grayscale.
+            img = Image.open(img_path).convert("L")
+            img_array = np.array(img)
+
+            height, width = img_array.shape
+
+            # Preserve square images or pad non-square images to create
+            # a square array.
+            if height == width:
+                square_img = img_array
+            else:
+                max_dim = max(height, width)
+                square_img = np.zeros(
+                    (max_dim, max_dim),
+                    dtype=img_array.dtype
+                )
+
+                start_x = (max_dim - width) // 2
+                start_y = (max_dim - height) // 2
+
+                square_img[
+                    start_y:start_y + height,
+                    start_x:start_x + width
+                ] = img_array
+
+            # Calculate the dimensions of each subtile.
+            cell_size = square_img.shape[0] // grid_size
+            intensity_map = np.zeros((grid_size, grid_size))
+
+            # Quantify the mean signal intensity of each subtile.
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    cell = square_img[
+                        i * cell_size:(i + 1) * cell_size,
+                        j * cell_size:(j + 1) * cell_size
+                    ]
+
+                    intensity_map[i, j] = np.mean(cell)
+
+            # Store the 4 × 4 intensity matrix in an individual worksheet.
+            df_intensity = pd.DataFrame(
+                np.round(intensity_map, 2)
+            )
+
+            # Excel worksheet names are limited to 31 characters.
+            sheet_name = os.path.splitext(filename)[0][:31]
+
+            df_intensity.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False
+            )
+
+    # 4. Save and close the Excel file.
+    writer.close()
+    print(f"Processing completed: {output_excel}")
